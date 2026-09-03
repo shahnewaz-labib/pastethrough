@@ -1,0 +1,50 @@
+#!/bin/bash
+# Fake xclip. Install it as `xclip`, earlier in PATH than the real one.
+#
+# Claude Code pastes an image on Linux by running exactly two commands:
+#   xclip -selection clipboard -t TARGETS   -o
+#   xclip -selection clipboard -t image/png -o
+# This script answers both from the SSH client's clipboard, served over a
+# reverse tunnel on PORT. Everything else, and any call made while the tunnel
+# is down, goes to the real xclip.
+#
+# ponytail: no protocol and no daemon. One TCP read per call.
+
+PORT="${PASTETHROUGH_PORT:-5556}"
+
+# The real xclip: the first one in PATH that is not this script.
+REAL=""
+self=$(cd "$(dirname "$0")" && pwd)/$(basename "$0")
+while IFS= read -r cand; do
+  [ "$(cd "$(dirname "$cand")" && pwd)/$(basename "$cand")" = "$self" ] && continue
+  REAL=$cand
+  break
+done < <(type -pa xclip 2>/dev/null)
+
+fetch() {
+  exec 3<>"/dev/tcp/127.0.0.1/$PORT" || return 1
+  cat <&3
+  exec 3<&-
+}
+
+case "$*" in
+  *TARGETS*)
+    if [ -n "$(fetch 2>/dev/null | head -c 4)" ]; then
+      echo image/png
+      exit 0
+    fi
+    ;;
+  *image/png*)
+    t=$(mktemp)
+    fetch 2>/dev/null > "$t"
+    if [ -s "$t" ]; then
+      cat "$t"
+      rm -f "$t"
+      exit 0
+    fi
+    rm -f "$t"
+    ;;
+esac
+
+[ -n "$REAL" ] || exit 1
+exec "$REAL" "$@"

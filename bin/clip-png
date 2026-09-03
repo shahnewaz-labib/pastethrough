@@ -1,0 +1,10 @@
+#!/bin/sh
+# Write the macOS clipboard image to stdout as PNG. Exit 1 when the clipboard holds no image.
+# This is the same coercion Claude Code itself uses on macOS.
+t=$(mktemp -t clippng).png
+osascript -e 'set p to (the clipboard as «class PNGf»)' \
+          -e "set f to open for access POSIX file \"$t\" with write permission" \
+          -e 'set eof f to 0' -e 'write p to f' -e 'close access f' >/dev/null 2>&1 \
+  || { rm -f "$t"; exit 1; }
+cat "$t"
+rm -f "$t"
